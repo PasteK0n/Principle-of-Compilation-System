@@ -1,0 +1,16 @@
+digit=[0-9]
+letter=[a-zA-Z]
+ID101=letter(letter|digit)*
+num100=digit+
+assign200=\:\=
+plus201=\+
+minus202=\-
+times203=\*
+over204=\/
+eq205=\=
+lt206=\<
+lparen207=\(
+rparen208=\)
+semi209=\;
+comment102=\{([^\}])*\}
+keyword103B= if | then | else | end | repeat | until | read | write

@@ -1,0 +1,21 @@
+{ TINY Language Test Program }
+read x; { 输入一个数字 x }
+
+if 0 < x then
+    fact := 1;
+    repeat
+        fact := fact * x;
+        x := x - 1
+    until x = 0;
+    write fact { 如果 x > 0，计算并输出其阶乘 }
+else
+    write 0 { 如果 x <= 0，直接输出 0 }
+end;
+
+{ 测试更复杂的算术运算和比较操作 }
+a := 10;
+b := 20;
+if a <= b then
+    c := (a + b) * 2;
+    write c
+end

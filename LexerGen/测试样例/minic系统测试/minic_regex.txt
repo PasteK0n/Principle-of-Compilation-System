@@ -1,0 +1,27 @@
+digit=[0-9]
+letter=[a-zA-Z]
+ID101=(_|letter)(_|letter|digit)*
+num100=digit+(\.digit+)?
+inc216=\+\+
+dec217=\-\-
+lte208=\<\=
+lt207=\<
+gte210=\>\=
+gt209=\>
+eq211=\=\=
+neq212=\!\=
+assign213=\=
+plus201=\+
+minus202=\-
+times203=\*
+over204=\/
+mod205=\%
+semi214=\;
+comma215=\,
+lparen218=\(
+rparen219=\)
+lbrack220=\[
+rbrack221=\]
+lbrace222=\{
+rbrace223=\}
+keyword103B=else | if | int | float | real | return | void | do | while | for
