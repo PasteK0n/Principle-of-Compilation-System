@@ -17,7 +17,7 @@
 
 请进入 `LexerGen` 文件夹，双击运行 `LexerGenerator.exe`，或者双击 `build.bat` 重新编译出该程序。主界面分为左侧操作区和右侧输出显示区。
 
-![image-20260717204934837](C:\Users\15958\AppData\Roaming\Typora\typora-user-images\image-20260717204934837.png)
+![image-20260717204934837](./image-20260717204934837.png)
 
 <center>程序界面</center>
 
@@ -98,7 +98,7 @@
 ## 4. 主界面操作指南
 双击运行 `ParserGenerator.exe` 后，您将看到一个美观的三栏式主控制台界面：
 
-![image-20260717203638713](C:\Users\15958\AppData\Roaming\Typora\typora-user-images\image-20260717203638713.png)
+![image-20260717203638713](./image-20260717203638713.png)
 
 <center>软件界面</center>
 
