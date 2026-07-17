@@ -17,6 +17,10 @@
 
 请进入 `LexerGen` 文件夹，双击运行 `LexerGenerator.exe`，或者双击 `build.bat` 重新编译出该程序。主界面分为左侧操作区和右侧输出显示区。
 
+![image-20260717204934837](C:\Users\15958\AppData\Roaming\Typora\typora-user-images\image-20260717204934837.png)
+
+<center>程序界面</center>
+
 ### 第一步：加载正则表达式定义
 
 1. 点击 **"Load Regex definitions"** 按钮。
@@ -71,6 +75,8 @@
 4. **LALR(1) 分析表计算**：根据 LALR(1) 状态机自动计算出 LALR(1) 分析表（Action & Goto 表），在分析表中会自动识别冲突（Shift/Reduce 或 Reduce/Reduce）并给出高能警告。
 5. **词法输出解析与语法分析**：可导入或拷贝第一阶段（LexerGen）输出的目标语言 `.lex` 单词编码文件，支持高度可自定义的 **Token ID 映射编辑器**。
 6. **一步到位语法树生成**：通过 LALR(1) 移进-归约算法，现场执行语法分析，输出极其详尽的**步进式语法分析过程日志**（包括每一步的步骤号、状态栈、符号栈、剩余输入缓存区、所做出的移进/归约动作），并最终在控制台与输出框中生成以树状缩进呈现的**完整语法树**。
+7.  **正则表达式自动转换为TokenIDMap**
+8. **自动生成中间程序**
 
 ---
 
@@ -91,6 +97,10 @@
 
 ## 4. 主界面操作指南
 双击运行 `ParserGenerator.exe` 后，您将看到一个美观的三栏式主控制台界面：
+
+![image-20260717203638713](C:\Users\15958\AppData\Roaming\Typora\typora-user-images\image-20260717203638713.png)
+
+<center>软件界面</center>
 
 ### 4.1 左栏：文法规则控制区 (BNF Grammar)
 * **文本编辑框**：用于直接编辑或查看当前的 BNF 文法。
@@ -117,20 +127,24 @@
     - `201 +` （将201号 Token 识别为加号操作符）
   - 用户可随时在此编辑框内增删、自定义改动，以支持 Mini-C 等不同语言词法器的适配。
 * **"Reset Map to TINY" 按钮**：快速一键恢复到默认的 TINY 单词编码集。
+* **"Import Regex Map"按钮**：载入正则表达式文件以生成对应语言映射
 * **"Source Token Stream (.lex)" 编辑框**：
   - 复制、粘贴或在此框内手工录入需要分析的 `.lex` 文件内容。
   - **数据格式**：支持形如 `103  101 "x"  206  100 0 ...` 的单词和属性流（与第一阶段 LexerGen 输出的 sample.lex 结构无缝兼容）。
 * **"Load .lex File" 按钮**：用于快速从磁盘中导入生成的 `.lex` 文件。
 * **"Run LALR Parser" 按钮**：最核心的按钮！一键根据当前的 BNF 规则、LALR 分析表与映射，解析当前的 Token 流，执行彻底的移进-归约算法，在右栏大控制台中画出完整的语法树，并追溯全套的分析流日志。
 
-### 4.3 右栏：控制台/结果展现面板 (Console Panel)
+### 4.3 右栏：控制台/结果展现面板 (Console Panel&AST  Tree View)
 * **大输出显示框**：以超宽视野的 Consolas 字体清晰展示每一次动作的所有计算细节。分析过程日志（Log）包含：
   - **Step**：动作步骤序号。
   - **State Stack**：移进-归约的状态栈变动。
   - **Symbol Stack**：符号栈内归约过程所涵盖的全部文法项。
   - **Input Buffer**：剩余输入单词缓冲区的当前切片。
   - **Action**：所做出的判断，如：`Shift to state 5` 或 `Reduce by: statement -> read identifier`。
-  - **树状缩进语法树**：利用 ASCII 字符渲染的语法树层次分明地展现出了词法到高层文法的完整派生路径。
+  - **树状缩进语法树**：利用 ASCII 字符渲染的语法树层次分明地展现出了词法到高层文法的完整派生路径,点击'+'或'-'按钮可实现子树展开或收起
+  - **三地址中间代码（Three-Address Code）**: 中间代码的生成与展示
+* **"Expand All"按钮**：展开所有子树
+* **"Callapse All"按钮**：收起所有子树
 
 ---
 

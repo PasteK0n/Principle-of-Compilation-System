@@ -17,6 +17,7 @@
  * V1.0.0      2026-04-28    陈乐豪      1. 创建文件并初始化基础功能
  ******************************************************************************/
 #include <windows.h>
+#include <commctrl.h>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -39,8 +40,11 @@ using namespace std;
 #define ID_BTN_RUN_PARSER 107
 #define ID_BTN_RESET_MAP 108
 #define ID_BTN_IMPORT_REGEX 109
+#define ID_TREEVIEW 201
+#define ID_BTN_EXPAND_ALL 202
+#define ID_BTN_COLLAPSE_ALL 203
 
-HWND hEditBNF, hEditTokenMap, hEditLex, hEditOut;
+HWND hEditBNF, hEditTokenMap, hEditLex, hEditOut, hTreeView;
 
 // Parse regular expression file and construct token ID map
 map<int, string> import_token_map_from_regex(const string& regex_content) {
@@ -106,10 +110,14 @@ map<int, string> import_token_map_from_regex(const string& regex_content) {
             string base_lower = base;
             for (char& c : base_lower) c = tolower(c);
             
-            if (base_lower == "id" || base_lower == "identifier") {
-                token_map[token_id] = "ID";
-            } else if (base_lower == "num" || base_lower == "number") {
-                token_map[token_id] = "NUM";
+            if (base_lower == "id") {
+                token_map[token_id] = "identifier";
+            } else if (base_lower == "identifier") {
+                token_map[token_id] = "identifier";
+            } else if (base_lower == "num") {
+                token_map[token_id] = "number";
+            } else if (base_lower == "number") {
+                token_map[token_id] = "number";
             } else {
                 string sym;
                 for (size_t i = 0; i < pattern.length(); ++i) {
@@ -145,6 +153,25 @@ string get_edit_text(HWND hwnd) {
     return s;
 }
 
+// Helper: Convert UTF-8 encoded std::string to ANSI (system default code page, e.g. GBK)
+string utf8_to_ansi(const string& utf8_str) {
+    if (utf8_str.empty()) return "";
+    
+    // UTF-8 to UTF-16
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, NULL, 0);
+    if (wlen <= 0) return "";
+    vector<wchar_t> wbuf(wlen);
+    MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, &wbuf[0], wlen);
+    
+    // UTF-16 to ANSI
+    int alen = WideCharToMultiByte(CP_ACP, 0, &wbuf[0], -1, NULL, 0, NULL, NULL);
+    if (alen <= 0) return "";
+    vector<char> abuf(alen);
+    WideCharToMultiByte(CP_ACP, 0, &wbuf[0], -1, &abuf[0], alen, NULL, NULL);
+    
+    return string(&abuf[0]);
+}
+
 // Helper: Set text with standard Windows CRLF carriage returns
 void set_edit_text(HWND hwnd, const string& text) {
     string win_text;
@@ -155,7 +182,8 @@ void set_edit_text(HWND hwnd, const string& text) {
             win_text += text[i];
         }
     }
-    SetWindowTextA(hwnd, win_text.c_str());
+    string ansi_text = utf8_to_ansi(win_text);
+    SetWindowTextA(hwnd, ansi_text.c_str());
 }
 
 // Helper: File dialog for loading files
@@ -304,6 +332,47 @@ bool initialize_parser(HWND hwnd) {
     return true;
 }
 
+void PopulateTreeView(HWND hTree, HTREEITEM hParent, SyntaxTreeNode* node) {
+    if (!node) return;
+    
+    // Format the node label
+    string label = node->name;
+    if (!node->lexeme.empty() && node->lexeme != node->name) {
+        label = node->name + " (" + node->lexeme + ")";
+    }
+
+    TVINSERTSTRUCTA tvis = {0};
+    tvis.hParent = hParent;
+    tvis.hInsertAfter = TVI_LAST;
+    tvis.item.mask = TVIF_TEXT | TVIF_PARAM;
+    tvis.item.pszText = (LPSTR)label.c_str();
+    tvis.item.lParam = (LPARAM)node;
+    
+    HTREEITEM hItem = (HTREEITEM)SendMessageA(hTree, TVM_INSERTITEMA, 0, (LPARAM)&tvis);
+    
+    for (auto child : node->children) {
+        PopulateTreeView(hTree, hItem, child);
+    }
+}
+
+void ExpandCollapseItem(HWND hTree, HTREEITEM hItem, UINT code) {
+    if (!hItem) return;
+    SendMessageA(hTree, TVM_EXPAND, (WPARAM)code, (LPARAM)hItem);
+    HTREEITEM hChild = (HTREEITEM)SendMessageA(hTree, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
+    while (hChild) {
+        ExpandCollapseItem(hTree, hChild, code);
+        hChild = (HTREEITEM)SendMessageA(hTree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)hChild);
+    }
+}
+
+void ExpandCollapseAll(HWND hTree, UINT code) {
+    HTREEITEM hRoot = (HTREEITEM)SendMessageA(hTree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+    while (hRoot) {
+        ExpandCollapseItem(hTree, hRoot, code);
+        hRoot = (HTREEITEM)SendMessageA(hTree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)hRoot);
+    }
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
@@ -343,17 +412,31 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             CreateWindowA("BUTTON", "Load .lex File", WS_VISIBLE | WS_CHILD, 410, 560, 120, 40, hwnd, (HMENU)ID_BTN_LOAD_LEX, NULL, NULL);
             CreateWindowA("BUTTON", "Run LALR Parser", WS_VISIBLE | WS_CHILD, 540, 560, 170, 40, hwnd, (HMENU)ID_BTN_RUN_PARSER, NULL, NULL);
 
-            // --- COLUMN 3: GLOBAL OUTPUT CONSOLE (Width: 630px) ---
-            CreateWindowA("STATIC", "Console / Result Presentation Panel:", WS_VISIBLE | WS_CHILD, 730, 10, 350, 20, hwnd, NULL, NULL, NULL);
+            // --- COLUMN 3: GLOBAL OUTPUT CONSOLE & TREEVIEW (Width: 630px) ---
+            INITCOMMONCONTROLSEX icex;
+            icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+            icex.dwICC = ICC_TREEVIEW_CLASSES;
+            InitCommonControlsEx(&icex);
+
+            CreateWindowA("STATIC", "Console / Detailed Parsing Process:", WS_VISIBLE | WS_CHILD, 730, 10, 350, 20, hwnd, NULL, NULL, NULL);
             hEditOut = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
-                730, 30, 630, 610, hwnd, NULL, NULL, NULL);
+                730, 30, 630, 250, hwnd, NULL, NULL, NULL);
+
+            CreateWindowA("STATIC", "Interactive Syntax/AST Tree View:", WS_VISIBLE | WS_CHILD, 730, 290, 350, 20, hwnd, NULL, NULL, NULL);
+            hTreeView = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "Syntax Tree",
+                WS_CHILD | WS_VISIBLE | WS_BORDER | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT,
+                730, 310, 630, 300, hwnd, (HMENU)ID_TREEVIEW, NULL, NULL);
+
+            CreateWindowA("BUTTON", "Expand All", WS_VISIBLE | WS_CHILD, 730, 620, 120, 30, hwnd, (HMENU)ID_BTN_EXPAND_ALL, NULL, NULL);
+            CreateWindowA("BUTTON", "Collapse All", WS_VISIBLE | WS_CHILD, 860, 620, 120, 30, hwnd, (HMENU)ID_BTN_COLLAPSE_ALL, NULL, NULL);
 
             // Set uniform styling fonts
             SendMessage(hEditBNF, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hEditTokenMap, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hEditLex, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hEditOut, WM_SETFONT, (WPARAM)hFont, TRUE);
+            SendMessage(hTreeView, WM_SETFONT, (WPARAM)hFont, TRUE);
 
             // Set default Token map in text control
             if (current_engine) delete current_engine;
@@ -483,6 +566,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     current_engine = new ParserEngine(current_grammar, current_automata);
                     current_engine->load_token_map_from_string(token_map_str);
 
+                    SendMessageA(hTreeView, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
                     bool success = current_engine->parse(lex_input);
 
                     stringstream ss;
@@ -492,6 +576,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         ss << "=========================================================\n\n";
                         ss << "=== SYNTAX TREE REPRESENTATION ===\n";
                         ss << current_engine->get_syntax_tree_string() << "\n\n";
+                        ss << "=== INTERMEDIATE CODE GENERATION ===\n";
+                        ss << current_engine->get_intermediate_code_string() << "\n\n";
+
+                        SyntaxTreeNode* ast_root = current_engine->get_ast_tree();
+                        if (ast_root) {
+                            PopulateTreeView(hTreeView, NULL, ast_root);
+                            ExpandCollapseAll(hTreeView, TVE_EXPAND);
+                            delete ast_root;
+                        }
                     } else {
                         ss << "=========================================================\n";
                         ss << "           LALR(1) PARSING FAILED (SYNTAX ERROR)         \n";
@@ -502,6 +595,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     ss << current_engine->get_parse_log() << "\n";
 
                     set_edit_text(hEditOut, ss.str());
+                    break;
+                }
+
+                case ID_BTN_EXPAND_ALL: {
+                    if (hTreeView) {
+                        ExpandCollapseAll(hTreeView, TVE_EXPAND);
+                    }
+                    break;
+                }
+
+                case ID_BTN_COLLAPSE_ALL: {
+                    if (hTreeView) {
+                        ExpandCollapseAll(hTreeView, TVE_COLLAPSE);
+                    }
                     break;
                 }
             }

@@ -54,9 +54,11 @@ public:
     // Get parsing process details
     const std::vector<ParseStep>& get_parse_steps() const { return parse_steps; }
     SyntaxTreeNode* get_syntax_tree() const { return syntax_tree_root; }
+    SyntaxTreeNode* get_ast_tree() const;
 
     // Print syntax tree as structured text
     std::string get_syntax_tree_string() const;
+    std::string get_intermediate_code_string() const;
     void print_syntax_tree(SyntaxTreeNode* node, int depth, std::stringstream& ss) const;
 
     std::string get_parse_log() const;
