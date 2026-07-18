@@ -46,8 +46,36 @@ using namespace std;
 
 HWND hEditBNF, hEditTokenMap, hEditLex, hEditOut, hTreeView;
 
-// Parse regular expression file and construct token ID map
-map<int, string> import_token_map_from_regex(const string& regex_content) {
+// Parse regular expression file and construct token ID map.
+// bnf_content: current BNF grammar text, used to auto-detect terminal naming convention
+//   (e.g. TINY uses "identifier"/"number"; MiniC uses "ID"/"NUM").
+map<int, string> import_token_map_from_regex(const string& regex_content, const string& bnf_content) {
+    // --- Auto-detect ID/Num symbol names from the BNF grammar ---
+    // If grammar contains "identifier" as a word, prefer "identifier" over "ID".
+    // If grammar contains "number" as a word, prefer "number" over "NUM".
+    // We check for whole-word occurrence to avoid false hits like "if" inside "identifier".
+    auto contains_word = [&](const string& text, const string& word) -> bool {
+        size_t pos = 0;
+        while ((pos = text.find(word, pos)) != string::npos) {
+            bool left_ok  = (pos == 0 || !isalpha((unsigned char)text[pos - 1]));
+            bool right_ok = (pos + word.size() >= text.size() || !isalpha((unsigned char)text[pos + word.size()]));
+            if (left_ok && right_ok) return true;
+            pos += word.size();
+        }
+        return false;
+    };
+
+    // Determine the terminal name used by the grammar for identifiers and numbers.
+    // Priority: explicit "identifier" or "number" keyword beats the shorter "ID"/"NUM".
+    string id_sym  = "ID";     // default: MiniC style
+    string num_sym = "NUM";    // default: MiniC style
+    if (!bnf_content.empty()) {
+        if (contains_word(bnf_content, "identifier")) id_sym  = "identifier";
+        if (contains_word(bnf_content, "number"))     num_sym = "number";
+        // If grammar has "ID" explicitly (and not already overridden) keep "ID".
+        // Same for "NUM".
+    }
+
     map<int, string> token_map;
     stringstream ss(regex_content);
     string line;
@@ -76,12 +104,13 @@ map<int, string> import_token_map_from_regex(const string& regex_content) {
             pattern = pattern.substr(p_start, p_end - p_start + 1);
         }
         
+        // Split name into alphabetic base, numeric token_id, and optional suffix
         string base;
         string num_str;
         string suffix;
         bool has_num = false;
         for (char c : name) {
-            if (isdigit(c)) {
+            if (isdigit((unsigned char)c)) {
                 num_str += c;
                 has_num = true;
             } else if (has_num) {
@@ -91,12 +120,17 @@ map<int, string> import_token_map_from_regex(const string& regex_content) {
             }
         }
         
+        // Lines without a numeric id (e.g. macro definitions like digit=[0-9]) are skipped.
         if (!has_num) {
             continue;
         }
         
         int token_id = stoi(num_str);
-        if (base.find("keyword") != string::npos || suffix == "B") {
+        string base_lower = base;
+        for (char& c : base_lower) c = tolower(c);
+
+        if (base_lower.find("keyword") != string::npos || suffix == "B") {
+            // Keyword block: split pattern by '|' and assign sequential IDs.
             stringstream pat_ss(pattern);
             string part;
             while (getline(pat_ss, part, '|')) {
@@ -106,28 +140,39 @@ map<int, string> import_token_map_from_regex(const string& regex_content) {
                 string kw = part.substr(pt_start, pt_end - pt_start + 1);
                 token_map[token_id++] = kw;
             }
+        } else if (base_lower == "id" || base_lower == "identifier") {
+            // Identifier token: use the name detected from the grammar.
+            token_map[token_id] = id_sym;
+        } else if (base_lower == "num" || base_lower == "number") {
+            // Numeric literal token: use the name detected from the grammar.
+            token_map[token_id] = num_sym;
+        } else if (base_lower == "comment") {
+            // Comments are not grammar terminals; skip them.
+            continue;
         } else {
-            string base_lower = base;
-            for (char& c : base_lower) c = tolower(c);
-            
-            if (base_lower == "id") {
-                token_map[token_id] = "identifier";
-            } else if (base_lower == "identifier") {
-                token_map[token_id] = "identifier";
-            } else if (base_lower == "num") {
-                token_map[token_id] = "number";
-            } else if (base_lower == "number") {
-                token_map[token_id] = "number";
-            } else {
-                string sym;
-                for (size_t i = 0; i < pattern.length(); ++i) {
-                    if (pattern[i] == '\\' && i + 1 < pattern.length()) {
-                        sym += pattern[i+1];
-                        i++;
-                    } else {
-                        sym += pattern[i];
-                    }
+            // Operator / punctuation: strip backslash escapes to get the actual symbol.
+            // A backslash in a regex always means the NEXT character is a literal.
+            // e.g. \* -> literal '*', \/ -> literal '/', \+ -> literal '+', \( -> literal '('
+            string sym;
+            for (size_t i = 0; i < pattern.length(); ++i) {
+                if (pattern[i] == '\\' && i + 1 < pattern.length()) {
+                    // Backslash-escaped character: always treat as a literal symbol.
+                    sym += pattern[i + 1];
+                    i++; // skip the escaped character
+                } else if (pattern[i] == '(' || pattern[i] == ')'
+                           || pattern[i] == '[' || pattern[i] == ']'
+                           || pattern[i] == '{' || pattern[i] == '}'
+                           || pattern[i] == '*' || pattern[i] == '+'
+                           || pattern[i] == '?' || pattern[i] == '^'
+                           || pattern[i] == '$' || pattern[i] == '|'
+                           || pattern[i] == '.') {
+                    // Unescaped regex meta-char: skip (part of the regex structure, not the symbol)
+                    continue;
+                } else {
+                    sym += pattern[i];
                 }
+            }
+            if (!sym.empty()) {
                 token_map[token_id] = sym;
             }
         }
@@ -495,8 +540,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 case ID_BTN_IMPORT_REGEX: {
                     string filePath = open_file_dialog(hwnd, "Regex Definitions (*.txt)\0*.txt\0All Files (*.*)\0*.*\0");
                     if (!filePath.empty()) {
-                        string content = read_file(filePath);
-                        map<int, string> imported = import_token_map_from_regex(content);
+                        string regex_content = read_file(filePath);
+                        // Pass current BNF grammar so the importer can auto-detect
+                        // whether the grammar uses "identifier"/"number" (TINY)
+                        // or "ID"/"NUM" (MiniC) as terminal symbol names.
+                        string bnf_content = get_edit_text(hEditBNF);
+                        map<int, string> imported = import_token_map_from_regex(regex_content, bnf_content);
                         
                         stringstream map_ss;
                         for (auto const& kv : imported) {
@@ -507,6 +556,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         
                         stringstream msg_ss;
                         msg_ss << "Successfully imported " << imported.size() << " Token ID mapping(s) from:\n" << filePath;
+                        // Show detected naming style in output
+                        bool uses_identifier = (bnf_content.find("identifier") != string::npos);
+                        bool uses_number     = (bnf_content.find("number")     != string::npos);
+                        msg_ss << "\nAuto-detected language style: "
+                               << (uses_identifier ? "TINY (identifier/number)" : "MiniC (ID/NUM)");
                         set_edit_text(hEditOut, msg_ss.str());
                     }
                     break;
